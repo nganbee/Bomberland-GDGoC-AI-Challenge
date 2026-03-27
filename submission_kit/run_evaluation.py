@@ -27,7 +27,7 @@ def run_match(model_paths, num_episodes=10, max_steps=500, seed=None):
     for i, path in enumerate(model_paths):
         if path != "None":
             # suppose submission file is /agent/team_name/agent.py -> extract team_name as agent name
-            checkpoint = torch.load(path)
+            checkpoint = torch.load(path, map_location="cpu")
             input_dim = checkpoint["input_dim"]
             num_actions = checkpoint["num_actions"]
             agents[i] = DQNAgent(i, input_dim, num_actions, lr=1e-3, device="cuda" if torch.cuda.is_available() else "cpu", pretrained_model=path)

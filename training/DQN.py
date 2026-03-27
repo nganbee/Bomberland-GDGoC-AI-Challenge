@@ -18,6 +18,7 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 from engine import *
+from utils import plot_loss, plot_rewards, plot_win_rates, plot_moving_average
 from agent import SimpleRuleAgent, SmarterRuleAgent, TacticalRuleAgent, GeniusRuleAgent, BoxFarmerAgent
 
 class ReplayBuffer:
@@ -171,13 +172,15 @@ class DQNAgent:
         self.optimizer.zero_grad(set_to_none=True)  # skip memset, just nullify refs
         loss.backward()
         self.optimizer.step()
+        self.global_step += 1
+        return loss.item()
         
     def update_target_network(self):
         """Copies the learned weights into the target network."""
         self.target_net.load_state_dict(self.q_net.state_dict())
 
     def load_agent(self, pretrained_model):
-        checkpoint = torch.load(pretrained_model)
+        checkpoint = torch.load(pretrained_model, map_location=self.device)
         self.input_dim = checkpoint["input_dim"]
         self.num_actions = checkpoint["num_actions"]
         self.q_net = DQNModel(self.input_dim, self.num_actions).to(self.device)
@@ -355,6 +358,9 @@ def train_dqn(user_id=0, enemy_type="simple", num_episodes=100, max_steps=500, s
     buffer = ReplayBuffer(capacity=10_000, state_dim=input_dim)
 
     global_step = 0
+    loss_history = []
+    reward_history = []
+    win_history = []
     with tqdm(total=num_episodes, desc="Training DQN") as pbar:
         for ep in range(num_episodes):
             obs = env.reset(seed=seed + ep)
@@ -378,14 +384,18 @@ def train_dqn(user_id=0, enemy_type="simple", num_episodes=100, max_steps=500, s
                 total_reward += r
                 if not next_obs["players"][enemy_agent.agent_id][2]:
                     r += 1.0
-
+                reward_history.append(r)
+                if done:
+                    win_history.append(1 if next_obs["players"][user_id][2] else 0)
+                
                 next_state_enc = encode_obs(next_obs, agent_ids)
                 buffer.push(state_enc, user_action, r, next_state_enc, done)
 
                 global_step += 1
                 if len(buffer) >= batch_size:
                     sampled_state, sampled_action, sampled_reward, sampled_next_state, sampled_done = buffer.sample(batch_size)
-                    user_agent.train_step(sampled_state, sampled_action, sampled_reward, sampled_next_state, sampled_done)
+                    loss = user_agent.train_step(sampled_state, sampled_action, sampled_reward, sampled_next_state, sampled_done)
+                    loss_history.append(loss)
 
                 prev_obs  = obs
                 obs       = next_obs
@@ -399,8 +409,9 @@ def train_dqn(user_id=0, enemy_type="simple", num_episodes=100, max_steps=500, s
             pbar.update(1)
             pbar.set_postfix(reward=f"{total_reward:.2f}", epsilon=f"{epsilon:.3f}")
 
+    model_folder = f"ckpts/dqn_{enemy_type}_{num_episodes}_episodes_{max_steps}_steps_{seed}_seed"
     if save_model:
-        model_path = f"ckpts/dqn_{enemy_type}_{num_episodes}_episodes_{max_steps}_steps_{seed}_seed_{user_agent.global_step}_global_step.pth"
+        model_path = f"{model_folder}/{user_agent.global_step}_global_step.pth"
         save_model_fn(user_agent.q_net, 
                     user_agent.optimizer, 
                     user_agent.global_step, 
@@ -410,6 +421,10 @@ def train_dqn(user_id=0, enemy_type="simple", num_episodes=100, max_steps=500, s
                     num_actions,
                     model_path)
         
+    plot_loss(loss_history=loss_history, save_path=f"{model_folder}/dqn_{enemy_type}_{num_episodes}_episodes_{max_steps}_steps_{seed}_seed_loss.png")
+    plot_rewards(reward_history=reward_history, save_path=f"{model_folder}/dqn_{enemy_type}_{num_episodes}_episodes_{max_steps}_steps_{seed}_seed_rewards.png")
+    plot_win_rates(win_history=win_history, save_path=f"{model_folder}/dqn_{enemy_type}_{num_episodes}_episodes_{max_steps}_steps_{seed}_seed_win_rates.png")
+    plot_moving_average(data=reward_history, window_size=10, save_path=f"{model_folder}/dqn_{enemy_type}_{num_episodes}_episodes_{max_steps}_steps_{seed}_seed_moving_average.png")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

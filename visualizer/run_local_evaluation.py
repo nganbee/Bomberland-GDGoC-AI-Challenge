@@ -191,7 +191,7 @@ def make_agents(model_paths, seed=None):
 
 	for i, path in enumerate(model_paths):
 		if path != "None":
-			checkpoint = torch.load(path)
+			checkpoint = torch.load(path, map_location="cpu")
 			input_dim = checkpoint["input_dim"]
 			num_actions = checkpoint["num_actions"]
 			agents[i] = DQNAgent(i, input_dim, num_actions, lr=1e-3, device="cuda" if torch.cuda.is_available() else "cpu", pretrained_model=path)
