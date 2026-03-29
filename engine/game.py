@@ -21,9 +21,10 @@ class BomberEnv:
 
         self.map = Map(self.width, self.height, seed=self.seed_val)
         self.players = [
-            # TODO: more players, random spawn, etc
             Player(0, 1, 1),
-            Player(1, self.width - 2, self.height - 2)
+            Player(1, self.height - 2, self.width - 2),
+            Player(2, 1, self.width - 2),
+            Player(3, self.height - 2, 1)
         ]
         
         self.bombs = []
