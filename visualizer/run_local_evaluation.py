@@ -16,7 +16,7 @@ if str(parent_dir) not in sys.path:
 
 from engine import BomberEnv
 from agent import RandomAgent, SimpleRuleAgent, SmarterRuleAgent, TacticalRuleAgent, GeniusRuleAgent, BoxFarmerAgent
-from training import DQNAgent, encode_obs
+from training import encode_obs, DQNAgent, DQfDAgent
 
 class Viewer:
 	def __init__(self, width=13, height=13, cell_size=42, fps=8):
@@ -195,7 +195,8 @@ def make_agents(model_paths, seed=None):
 			checkpoint = torch.load(path, map_location="cpu")
 			input_dim = checkpoint["input_dim"]
 			num_actions = checkpoint["num_actions"]
-			agents[i] = DQNAgent(i, input_dim, num_actions, lr=1e-3, device="cuda" if torch.cuda.is_available() else "cpu", pretrained_model=path)
+			# agents[i] = DQNAgent(i, input_dim, num_actions, lr=1e-3, device="cuda" if torch.cuda.is_available() else "cpu", pretrained_model=path)
+			agents[i] = DQfDAgent(i, input_dim, num_actions, lr=1e-3, device="cuda" if torch.cuda.is_available() else "cpu", pretrained_model=path)
 			agents[i].load_agent(pretrained_model=path)
 			names[i] = os.path.basename(path)
 		else:
@@ -239,6 +240,44 @@ def rotate_map_180(map_feat):
 	return np.flip(map_feat, axis=(1, 2)).copy()
 
 
+ACTION_FLIP_H = {0: 0, 1: 1, 2: 2, 3: 4, 4: 3, 5: 5}  # mirror columns: L<->R
+ACTION_FLIP_V = {0: 0, 1: 2, 2: 1, 3: 3, 4: 4, 5: 5}  # mirror rows: U<->D
+
+
+def orient_map_to_topleft(map_feat, agent_id):
+	"""
+	Re-orient spatial features so the given agent's starting corner is viewed as top-left.
+
+	Assumes the standard 4-corner spawn layout:
+	- 0: top-left, 1: top-right, 2: bottom-left, 3: bottom-right
+	For other ids, leaves the map unchanged.
+	"""
+	if agent_id == 0:
+		return map_feat
+	if agent_id == 1:
+		return np.flip(map_feat, axis=2).copy()
+	if agent_id == 2:
+		return np.flip(map_feat, axis=1).copy()
+	if agent_id == 3:
+		return rotate_map_180(map_feat)
+	return map_feat
+
+
+def unorient_action_from_topleft(action, agent_id):
+	"""
+	Map an action chosen in the "agent at top-left" orientation back to the env's frame.
+	"""
+	if agent_id == 0:
+		return action
+	if agent_id == 1:
+		return ACTION_FLIP_H[action]
+	if agent_id == 2:
+		return ACTION_FLIP_V[action]
+	if agent_id == 3:
+		return ACTION_MIRROR[action]
+	return action
+
+
 def simulate_episodes(model_paths, num_episodes=10, max_steps=500, seed=None):
 	env = BomberEnv(max_steps=max_steps)
 	agents, names = make_agents(model_paths, seed=seed)
@@ -254,14 +293,21 @@ def simulate_episodes(model_paths, num_episodes=10, max_steps=500, seed=None):
 		while not done and step < max_steps:
 			actions = []
 			for i in range(len(agents)):
-				if isinstance(agents[i], DQNAgent):
-					opp_id = 1 - i
-					map_feat, aux_feat = encode_obs(obs, agent_ids=[i, opp_id])
-					if i != 0:
-						map_feat = rotate_map_180(map_feat)
+				if isinstance(agents[i], (DQNAgent, DQfDAgent)):
+					# Prefer 2-player symmetry; fall back to "next player" when >2.
+					opp_id = (1 - i) if len(agents) == 2 else ((i + 1) % len(agents))
+					encoded = encode_obs(obs, agent_ids=[i, opp_id])
+					if isinstance(encoded, tuple) and len(encoded) == 2:
+						map_feat, aux_feat = encoded
+					else:
+						raise ValueError(
+							"encode_obs must return (map_feat, aux_feat) for model-based agents"
+						)
+
+					# Orient each agent's perspective so the acting agent is at top-left.
+					map_feat = orient_map_to_topleft(map_feat, i)
 					action = agents[i].act(map_feat, aux_feat, epsilon=0.05)
-					if i != 0:
-						action = ACTION_MIRROR[action]
+					action = unorient_action_from_topleft(action, i)
 					actions.append(action)
 				else:
 					actions.append(agents[i].act(obs))
@@ -345,7 +391,7 @@ def run_simple_viewer(model_paths, num_episodes=10, max_steps=100, seed=None, au
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--model_paths", nargs="+", default=["None", "None"])
+	parser.add_argument("--model_paths", nargs="+", default=["None", "None", "None", "None"])
 	parser.add_argument("--num_episodes", type=int, default=10)
 	parser.add_argument("--max_steps", type=int, default=500)
 	parser.add_argument("--seed", type=int, default=None)

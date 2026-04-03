@@ -27,8 +27,8 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 from engine import BomberEnv, Map, Player
-from reward import compute_reward
-from utils import plot_loss, plot_rewards, plot_moving_average
+from .reward import compute_reward
+from .utils import plot_loss, plot_rewards, plot_moving_average
 from agent import (
     SimpleRuleAgent, SmarterRuleAgent, TacticalRuleAgent,
     GeniusRuleAgent, BoxFarmerAgent,
@@ -187,14 +187,29 @@ class DQNModel(nn.Module):
 
 
 def encode_obs(obs, agent_ids):
-    """Encode raw observation into (map_feat [C,H,W], aux_feat [A,])."""
+    """Encode raw observation into (map_feat [C,H,W], aux_feat [A,]).
+
+    agent_ids can be:
+    - [user_id, opp_id] (legacy 2-agent encoding)
+    - [user_id, opp1_id, opp2_id, opp3_id] (4-agent encoding)
+    - [user_id] (will auto-fill opponents from obs["players"])
+    """
     if obs is None:
         raise ValueError("obs should not be None")
     user_id = int(agent_ids[0])
-    opp_id = int(agent_ids[1]) if len(agent_ids) > 1 else (1 - user_id)
+    players = obs["players"]
+    num_players = int(players.shape[0])
+
+    if len(agent_ids) > 1:
+        ordered_ids = [int(i) for i in agent_ids]
+    else:
+        ordered_ids = [user_id] + [i for i in range(num_players) if i != user_id]
+
+    opp_ids = [i for i in ordered_ids[1:] if i != user_id]
+    while len(opp_ids) < 3:
+        opp_ids.append(-1)
 
     grid = obs["map"]
-    players = obs["players"]
     bombs = obs["bombs"]
     H, W = grid.shape
 
@@ -202,13 +217,22 @@ def encode_obs(obs, agent_ids):
                     for v in (Map.GRASS, Map.WALL, Map.BOX, Map.ITEM_RADIUS, Map.ITEM_CAPACITY)]
 
     my_x, my_y, my_alive, my_bombs_left, my_radius_bonus = players[user_id]
-    ox, oy, opp_alive, _, _ = players[opp_id]
     my_pos = np.zeros((H, W), dtype=np.float32)
-    opp_pos = np.zeros((H, W), dtype=np.float32)
     if int(my_alive) == 1:
         my_pos[int(my_x), int(my_y)] = 1.0
-    if int(opp_alive) == 1:
-        opp_pos[int(ox), int(oy)] = 1.0
+
+    opp_pos_planes = []
+    opp_alive_flags = []
+    for oid in opp_ids[:3]:
+        plane = np.zeros((H, W), dtype=np.float32)
+        alive_flag = 0.0
+        if 0 <= oid < num_players:
+            ox, oy, o_alive, _, _ = players[oid]
+            if int(o_alive) == 1:
+                plane[int(ox), int(oy)] = 1.0
+                alive_flag = 1.0
+        opp_pos_planes.append(plane)
+        opp_alive_flags.append(alive_flag)
 
     bomb_timer = np.zeros((H, W), dtype=np.float32)
     bomb_owned = np.zeros((H, W), dtype=np.float32)
@@ -221,10 +245,16 @@ def encode_obs(obs, agent_ids):
     scalar = np.array([
         float(my_bombs_left) / Player.MAX_BOMB_CAPACITY,
         float(my_radius_bonus) / Player.MAX_BOMB_RADIUS,
-        float(opp_alive),
+        *opp_alive_flags[:3],
     ], dtype=np.float32)
 
-    map_feat = np.stack([*map_channels, my_pos, opp_pos, bomb_timer, bomb_owned],
+    map_feat = np.stack([
+        *map_channels,
+        my_pos,
+        *opp_pos_planes[:3],
+        bomb_timer,
+        bomb_owned,
+    ],
                         axis=0).astype(np.float32)
     return map_feat, scalar
 
@@ -283,9 +313,13 @@ def collect_demonstrations(expert_type, opponent_type, num_episodes,
     input_spec : tuple
     """
     env = BomberEnv(max_steps=max_steps, seed=seed)
-    expert = _make_agent(expert_type, agent_id=0)
-    opponent = _make_agent(opponent_type, agent_id=1)
-    agent_ids = [0, 1]
+    expert_id = 0
+    expert = _make_agent(expert_type, agent_id=expert_id)
+
+    # BomberEnv always has 4 players (0..3). Fill all opponents.
+    opp_ids = [i for i in range(4) if i != expert_id]
+    opponents = [_make_agent(opponent_type, agent_id=i) for i in opp_ids]
+    agent_ids = [expert_id, *opp_ids]
 
     dummy_obs = env.reset(seed=seed)
     sample = encode_obs(dummy_obs, agent_ids)
@@ -305,9 +339,13 @@ def collect_demonstrations(expert_type, opponent_type, num_episodes,
         ep_transitions = []
 
         for _ in range(max_steps):
+            actions = [None] * 4
             expert_action = expert.act(obs)
-            opp_action = opponent.act(obs)
-            next_obs, terminated, truncated = env.step([expert_action, opp_action])
+            actions[expert_id] = expert_action
+            for opp in opponents:
+                actions[opp.agent_id] = opp.act(obs)
+
+            next_obs, terminated, truncated = env.step(actions)
             done = terminated or truncated
 
             next_map_state, next_aux_state = encode_obs(next_obs, agent_ids)
@@ -326,9 +364,10 @@ def collect_demonstrations(expert_type, opponent_type, num_episodes,
                 break
 
         total_eps += 1
-        expert_alive = int(next_obs["players"][0][2]) == 1
-        opp_alive = int(next_obs["players"][1][2]) == 1
-        expert_won = expert_alive and not opp_alive
+        alive_final = next_obs["players"][:, 2].astype(np.int8)
+        expert_alive = int(alive_final[expert_id]) == 1
+        opp_alive_any = any(int(alive_final[i]) == 1 for i in opp_ids)
+        expert_won = expert_alive and (not opp_alive_any)
 
         if not expert_won:
             continue
@@ -469,7 +508,7 @@ class DQfDAgent:
     """DQN agent with an additional large-margin classification loss for DQfD."""
 
     def __init__(self, agent_id, input_spec, num_actions, lr=1e-3,
-                 device="cpu", margin=0.8):
+                 device="cpu", margin=0.8, pretrained_model=None):
         self.agent_id = agent_id
         self.num_actions = num_actions
         self.device = device
@@ -479,13 +518,16 @@ class DQfDAgent:
         self.global_step = 0
         self.epsilon = 1.0
 
-        self.map_shape = tuple(input_spec[0])
-        self.aux_dim = int(input_spec[1])
-        self.q_net = DQNModel(self.map_shape, self.aux_dim, num_actions).to(device)
+        if pretrained_model:
+            self.load_agent(pretrained_model)
+        else:
+            self.map_shape = tuple(input_spec[0])
+            self.aux_dim = int(input_spec[1])
+            self.q_net = DQNModel(self.map_shape, self.aux_dim, num_actions).to(device)
+            self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr,
+                                        eps=1e-8, weight_decay=1e-5)
         self.target_net = DQNModel(self.map_shape, self.aux_dim, num_actions).to(device)
         self.target_net.load_state_dict(self.q_net.state_dict())
-        self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr,
-                                    eps=1e-8, weight_decay=1e-5)
 
     def act(self, map_state, aux_state, epsilon=0.0):
         if random.random() < epsilon:
@@ -556,6 +598,21 @@ class DQfDAgent:
 
         return loss.item(), td_loss.item(), margin_loss.item()
 
+    def load_agent(self, pretrained_model):
+        ckpt = torch.load(pretrained_model, map_location=self.device)
+        self.map_shape, self.aux_dim = ckpt["input_shape"]
+        self.actions_dim = int(ckpt["num_actions"])
+        self.q_net = DQNModel(self.map_shape, self.aux_dim, self.actions_dim).to(self.device)
+        self.q_net.load_state_dict(ckpt["model_state_dict"])
+
+        self.optimizer = optim.Adam(self.q_net.parameters(), lr=ckpt.get("lr", self.lr), eps=1e-8, weight_decay=1e-5)
+        self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        self.global_step = ckpt.get("global_step", 0)
+        self.epsilon = ckpt.get("epsilon", 1.0)
+        self.lr = ckpt.get("lr", self.lr)
+        print(f"Loaded pretrained model from {pretrained_model} "
+              f"(global_step={self.global_step}, epsilon={self.epsilon:.3f})")
+
     def update_target_network(self):
         self.target_net.load_state_dict(self.q_net.state_dict())
 
@@ -568,6 +625,7 @@ def train_dqfd(
     user_id=0,
     expert_type="genius",
     enemy_type="simple",
+    num_players=4,
     demo_episodes=100,
     bc_epochs=15,
     num_episodes=300,
@@ -629,8 +687,17 @@ def train_dqfd(
     print(f"{'='*60}")
 
     env = BomberEnv(max_steps=max_steps, seed=seed)
-    enemy_agent = _make_agent(enemy_type, agent_id=1)
-    agent_ids = [user_id, enemy_agent.agent_id]
+
+    if num_players not in (2, 4):
+        raise ValueError("num_players must be 2 or 4 for this script")
+
+    if num_players == 2:
+        enemy_agents = [_make_agent(enemy_type, agent_id=(1 - user_id))]
+    else:
+        enemy_ids = [i for i in range(4) if i != user_id]
+        enemy_agents = [_make_agent(enemy_type, agent_id=i) for i in enemy_ids]
+
+    agent_ids = [user_id, *[e.agent_id for e in enemy_agents]]
 
     epsilon_start = 0.3
     epsilon_min = 0.05
@@ -664,10 +731,10 @@ def train_dqfd(
 
             for _ in range(max_steps):
                 user_action = agent.act(map_state, aux_state, epsilon=epsilon)
-                enemy_action = enemy_agent.act(obs)
-                actions = [None, None]
+                actions = [None] * (2 if num_players == 2 else 4)
                 actions[user_id] = user_action
-                actions[enemy_agent.agent_id] = enemy_action
+                for e in enemy_agents:
+                    actions[e.agent_id] = e.act(obs)
 
                 next_obs, terminated, truncated = env.step(actions)
                 done = terminated or truncated
@@ -750,6 +817,8 @@ if __name__ == "__main__":
     parser.add_argument("--enemy_type", type=str, default="simple",
                         choices=list(AGENT_LOOKUP.keys()),
                         help="Opponent during demo collection and RL training")
+    parser.add_argument("--num_players", type=int, default=4, choices=[2, 4],
+                        help="Train in 2-player or 4-player mode (env has 4 by default)")
     parser.add_argument("--demo_episodes", type=int, default=100,
                         help="Episodes of expert play to collect")
     parser.add_argument("--bc_epochs", type=int, default=15,
@@ -782,6 +851,7 @@ if __name__ == "__main__":
         seed=args.seed,
         lambda_bc_init=args.lambda_bc,
         margin=args.margin,
+        num_players=args.num_players,
         save_model=args.save_model,
         pretrained_model=args.load_model,
     )
