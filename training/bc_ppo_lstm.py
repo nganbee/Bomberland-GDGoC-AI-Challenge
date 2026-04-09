@@ -12,6 +12,7 @@ import os
 import random
 import sys
 from pathlib import Path
+from typing import Sequence, Union
 
 parent_dir = Path(__file__).resolve().parent.parent
 if str(parent_dir) not in sys.path:
@@ -34,6 +35,7 @@ try:
         _make_agent,
         collect_demonstrations,
         encode_obs,
+        normalize_opponent_names,
     )
     from .reward_02 import EpisodeRewardState, compute_reward_icec
     from .utils import plot_loss, plot_moving_average, plot_rewards
@@ -44,6 +46,7 @@ except ImportError:
         _make_agent,
         collect_demonstrations,
         encode_obs,
+        normalize_opponent_names,
     )
     from reward_02 import EpisodeRewardState, compute_reward_icec
     from utils import plot_loss, plot_moving_average, plot_rewards
@@ -345,7 +348,7 @@ class BC_PPO_LSTM_Agent:
 def train_bc_ppo_lstm(
     user_id: int = 0,
     expert_type: str = "tactical",
-    enemy_type: str = "simple",
+    enemy_type: Union[str, Sequence[str]] = "simple",
     demo_episodes: int = 100,
     bc_epochs: int = 15,
     ppo_updates: int = 500,
@@ -372,6 +375,9 @@ def train_bc_ppo_lstm(
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    demo_opp_ids = [i for i in range(4) if i != 0]
+    enemy_type_tag = "_".join(normalize_opponent_names(enemy_type, demo_opp_ids))
+
     bc_data, _, input_spec = collect_demonstrations(
         expert_type=expert_type,
         opponent_type=enemy_type,
@@ -394,7 +400,7 @@ def train_bc_ppo_lstm(
     ).to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr, eps=1e-5)
 
-    tag = f"bcppo_{expert_type}_{enemy_type}_p{parallel_envs}_s{seed}"
+    tag = f"bcppo_{expert_type}_{enemy_type_tag}_p{parallel_envs}_s{seed}"
     out_dir = f"ckpts/{tag}"
 
     bc_loss_history: list[float] = []
@@ -411,7 +417,8 @@ def train_bc_ppo_lstm(
             )
 
     enemy_ids = [i for i in range(4) if i != user_id]
-    enemy_agents = [_make_agent(enemy_type, agent_id=i) for i in enemy_ids]
+    enemy_names = normalize_opponent_names(enemy_type, enemy_ids)
+    enemy_agents = [_make_agent(name, agent_id=i) for name, i in zip(enemy_names, enemy_ids)]
     agent_ids = [user_id, *enemy_ids]
 
     n_env = max(1, int(parallel_envs))
@@ -646,7 +653,15 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=86)
     parser.add_argument("--user_id", type=int, default=0)
     parser.add_argument("--expert_type", type=str, default="tactical", choices=list(AGENT_LOOKUP.keys()))
-    parser.add_argument("--enemy_type", type=str, default="simple", choices=list(AGENT_LOOKUP.keys()))
+    parser.add_argument(
+        "--enemy_type",
+        nargs="+",
+        default=["simple"],
+        metavar="TYPE",
+        choices=list(AGENT_LOOKUP.keys()),
+        help="One type (broadcast to all 3 bots) or three types: one per enemy id in "
+        "ascending order among slots other than --user_id (e.g. user 0 → ids 1,2,3).",
+    )
     parser.add_argument("--demo_episodes", type=int, default=100)
     parser.add_argument("--bc_epochs", type=int, default=15)
     parser.add_argument("--ppo_updates", type=int, default=500)
@@ -689,7 +704,7 @@ if __name__ == "__main__":
     train_bc_ppo_lstm(
         user_id=args.user_id,
         expert_type=args.expert_type,
-        enemy_type=args.enemy_type,
+        enemy_type=tuple(args.enemy_type) if len(args.enemy_type) != 1 else args.enemy_type[0],
         demo_episodes=args.demo_episodes,
         bc_epochs=args.bc_epochs,
         ppo_updates=args.ppo_updates,

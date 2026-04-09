@@ -5,7 +5,7 @@ Used by SQIL (DQfD) and bc_ppo_lstm (BC + PPO). No CUDA or training side effects
 
 import sys
 from pathlib import Path
-from typing import Callable, Optional, Tuple, Any
+from typing import Callable, Optional, Tuple, Any, Sequence, Union
 
 import numpy as np
 from tqdm import tqdm
@@ -40,6 +40,25 @@ def _make_agent(name: str, agent_id: int):
     if cls is None:
         raise ValueError(f"Unknown agent type: {name}")
     return cls(agent_id)
+
+
+def normalize_opponent_names(names: Union[str, Sequence[str]], opp_ids: Sequence[int]) -> list[str]:
+    """Broadcast a single type to all opponents, or require one name per ``opp_ids`` slot.
+
+    Order matches ``opp_ids`` (ascending enemy ids for the usual ``range(4)`` minus learner).
+    """
+    if isinstance(names, str):
+        lst = [names]
+    else:
+        lst = list(names)
+    n = len(opp_ids)
+    if len(lst) == 1:
+        return lst * n
+    if len(lst) == n:
+        return lst
+    raise ValueError(
+        f"Expected 1 or {n} opponent types, got {len(lst)}: {lst!r} (opp_ids={list(opp_ids)})"
+    )
 
 
 class ReplayBuffer:
@@ -171,7 +190,7 @@ def augment_transition(map_state, aux_state, action):
 
 def collect_demonstrations(
     expert_type: str,
-    opponent_type: str,
+    opponent_type: Union[str, Sequence[str]],
     num_episodes: int,
     max_steps: int,
     seed: int,
@@ -180,6 +199,9 @@ def collect_demonstrations(
     reward_fn: Optional[Callable[..., float]] = None,
 ) -> Tuple[dict, Optional[ReplayBuffer], Tuple[Any, int]]:
     """Collect expert demonstrations (win-filtered). Optionally skip DQfD replay buffer.
+
+    ``opponent_type`` is either one key in ``AGENT_LOOKUP`` (all opponents) or one name
+    per opponent id in ``[1,2,3]`` (expert is always slot 0 in demos).
 
     reward_fn(prev_obs, next_obs, agent_id) -> float; required if store_dqfd_buffer True.
     """
@@ -190,7 +212,8 @@ def collect_demonstrations(
     expert_id = 0
     expert = _make_agent(expert_type, agent_id=expert_id)
     opp_ids = [i for i in range(4) if i != expert_id]
-    opponents = [_make_agent(opponent_type, agent_id=i) for i in opp_ids]
+    opp_types = normalize_opponent_names(opponent_type, opp_ids)
+    opponents = [_make_agent(t, agent_id=i) for t, i in zip(opp_types, opp_ids)]
     agent_ids = [expert_id, *opp_ids]
 
     dummy_obs = env.reset(seed=seed)
