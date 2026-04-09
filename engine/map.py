@@ -17,6 +17,8 @@ class Map:
         self.height = height
         self.rng = np.random.default_rng(seed)
         self.box_spawn_probability = 0.3
+        # Extra random walls on grass (checkerboard walls are fixed separately).
+        self.wall_spawn_probability = 0.05
         self.par = np.zeros(self.width * self.height, dtype=np.int32)
         self.grid = np.zeros((height, width), dtype=int)
         self._setup_walls()
@@ -120,7 +122,7 @@ class Map:
         # Randomly add walls
         for row in range(1, self.height - 1):
             for col in range(1, self.width - 1):
-                if self.grid[row, col] == 0 and self.rng.random() < 0.2:
+                if self.grid[row, col] == 0 and self.rng.random() < self.wall_spawn_probability:
                     self.grid[row, col] = self.WALL
         
         # for any 2x2, cannot be four wall cells

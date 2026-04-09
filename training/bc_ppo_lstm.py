@@ -371,6 +371,7 @@ def train_bc_ppo_lstm(
     skip_bc: bool = False,
     device: str | None = None,
     reward_log_episodes: int = 3,
+    shuffle_enemy_types: bool = True,
 ):
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -417,7 +418,9 @@ def train_bc_ppo_lstm(
             )
 
     enemy_ids = [i for i in range(4) if i != user_id]
-    enemy_names = normalize_opponent_names(enemy_type, enemy_ids)
+    enemy_names = list(normalize_opponent_names(enemy_type, enemy_ids))
+    if shuffle_enemy_types:
+        np.random.default_rng(seed + 90208).shuffle(enemy_names)
     enemy_agents = [_make_agent(name, agent_id=i) for name, i in zip(enemy_names, enemy_ids)]
     agent_ids = [user_id, *enemy_ids]
 
@@ -457,6 +460,9 @@ def train_bc_ppo_lstm(
         f"steps/rollout={ppo_steps}  recurrent_minibatch_envs={_epm} "
         f"(~{_epm * ppo_steps} transitions per opt step)"
     )
+    if len(set(enemy_names)) > 1:
+        pairs = ", ".join(f"id{k}:{v}" for k, v in zip(enemy_ids, enemy_names))
+        print(f"  Opponent types (after shuffle={shuffle_enemy_types}): {pairs}")
 
     ppo_loss_history: list[float] = []
     reward_history: list[float] = []
@@ -695,6 +701,11 @@ if __name__ == "__main__":
         default=3,
         help="Print per-component reward sums for the first N completed episodes (0 = off).",
     )
+    parser.add_argument(
+        "--no-shuffle-enemy-types",
+        action="store_true",
+        help="Keep opponent types in ascending id order (first --enemy_type to lowest id, etc.).",
+    )
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -727,4 +738,5 @@ if __name__ == "__main__":
         skip_bc=args.skip_bc,
         device=args.device,
         reward_log_episodes=args.reward_log_episodes,
+        shuffle_enemy_types=not args.no_shuffle_enemy_types,
     )
