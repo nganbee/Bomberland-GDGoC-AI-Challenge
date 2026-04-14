@@ -41,7 +41,7 @@ R_BLOCK_DESTROYED = 0.1
 R_CLOSEST_SO_FAR = 0.1
 R_CLOSER_STEP = 0.002
 R_FARTHER_STEP = -0.002
-R_TIME_STEP = -0.01
+R_TIME_STEP = -0.02
 R_IN_BLAST = -0.000666
 R_SAFE_NEAR_BOMB = 0.002
 
@@ -50,7 +50,8 @@ SAFE_NEAR_BOMB_RADIUS = 4
 
 # Anti–reward-hacking: dense shaping cap per episode, decay with time, and
 # movement bonuses only when improving global best distance to an enemy.
-DENSE_SHAPING_CAP_PER_EPISODE = 0.45
+# Cap raised so the shaping signal lasts more of the episode before saturating.
+DENSE_SHAPING_CAP_PER_EPISODE = 0.8
 DENSE_DECAY_TAU_STEPS = 280.0
 
 

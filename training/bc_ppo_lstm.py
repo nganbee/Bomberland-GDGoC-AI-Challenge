@@ -353,17 +353,17 @@ def train_bc_ppo_lstm(
     bc_epochs: int = 15,
     ppo_updates: int = 500,
     ppo_steps: int = 128,
-    parallel_envs: int = 1,
+    parallel_envs: int = 4,
     max_steps: int = 500,
     seed: int = 86,
-    lstm_hidden: int = 256,
+    lstm_hidden: int = 128,
     lstm_layers: int = 1,
     lr: float = 3e-4,
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
     clip_coef: float = 0.2,
     vf_coef: float = 0.5,
-    ent_coef: float = 0.01,
+    ent_coef: float = 0.03,
     ppo_epochs: int = 4,
     minibatch_size: int = 256,
     save_model: bool = True,
@@ -408,7 +408,7 @@ def train_bc_ppo_lstm(
     if load_checkpoint_path:
         load_checkpoint(load_checkpoint_path, model, device, optimizer)
         model.train()
-    elif not skip_bc:
+    if not skip_bc:
         print("Phase 1: Behavioral cloning (LSTM policy, i.i.d. windows)")
         bc_loss_history = pretrain_bc_lstm(model, bc_data, device, bc_epochs=bc_epochs)
         if save_model:
@@ -549,12 +549,12 @@ def train_bc_ppo_lstm(
         reward_history.extend(stor_rew.reshape(-1).tolist())
         rollout_return_history.append(float(np.mean(stor_rew.sum(axis=0))))
 
-        # Bootstrap value V(s_last) for GAE at T-1
+        # Bootstrap value V(s_last) for GAE at T-1 — must use the carried LSTM state,
+        # not a fresh zeroed state, otherwise the critic sees a context-free observation.
         with torch.no_grad():
             m_last = torch.from_numpy(np.stack(map_l)).to(device)
             a_last = torch.from_numpy(np.stack(aux_l)).to(device)
-            h_boot, c_boot = model.init_hidden(n_env, device)
-            _, v_last, _ = model.forward_step(m_last, a_last, (h_boot, c_boot))
+            _, v_last, _ = model.forward_step(m_last, a_last, (h_s, c_s))
 
         rew_t = torch.from_numpy(stor_rew).to(device)
         done_t = torch.from_numpy(stor_done).to(device)
@@ -670,19 +670,19 @@ if __name__ == "__main__":
     )
     parser.add_argument("--demo_episodes", type=int, default=100)
     parser.add_argument("--bc_epochs", type=int, default=15)
-    parser.add_argument("--ppo_updates", type=int, default=500)
-    parser.add_argument("--ppo_steps", type=int, default=128)
-    parser.add_argument("--parallel_envs", type=int, default=1,
+    parser.add_argument("--ppo_updates", type=int, default=2000)
+    parser.add_argument("--ppo_steps", type=int, default=256)
+    parser.add_argument("--parallel_envs", type=int, default=4,
                         help="Number of parallel BomberEnv instances (1 = off)")
-    parser.add_argument("--max_steps", type=int, default=300)
-    parser.add_argument("--lstm_hidden", type=int, default=256)
+    parser.add_argument("--max_steps", type=int, default=256)
+    parser.add_argument("--lstm_hidden", type=int, default=128)
     parser.add_argument("--lstm_layers", type=int, default=1)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--gae_lambda", type=float, default=0.95)
     parser.add_argument("--clip_coef", type=float, default=0.2)
     parser.add_argument("--vf_coef", type=float, default=0.5)
-    parser.add_argument("--ent_coef", type=float, default=0.01)
+    parser.add_argument("--ent_coef", type=float, default=0.03)
     parser.add_argument("--ppo_epochs", type=int, default=4)
     parser.add_argument(
         "--minibatch_size",
