@@ -22,7 +22,7 @@ Teams build intelligent agents using strategies from tree search to deep reinfor
 
 ### For Participants
 *   **[Agent Guide](agent/README.md)**: How to develop, test, and submit your agent.
-*   **[Competition Guide](docs/COMPETITION_RULES.md)**: Official guide and scoring mechanics.
+*   **[Competition Guide](docs/COMPETITION_GUIDE.md)**: Official guide and scoring mechanics.
 
 ### For Organizers
 ***Coming soon***
