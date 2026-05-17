@@ -9,9 +9,9 @@
  * 2. Replace SUBMISSION_WEBHOOK_AUTH_TOKEN with the same Bearer token used in Flask (env var REGISTRATION_WEBHOOK_AUTH_TOKEN)
  */
 
-const SUBMISSION_WEBHOOK_URL = "http://34.158.46.70:5000/submit"; // "https://arguable-harpist-false.ngrok-free.dev/submit";  // TODO: Replace with production URL
+const SUBMISSION_WEBHOOK_URL = "Your Production Submission Webhook URL";
 
-const SUBMISSION_WEBHOOK_AUTH_TOKEN = "4c376ba89b8b8ade3626cb84252f2e35e1c02b2b31c70b630c03345ce4917f57";  // TODO: Replace with your Bearer token
+const SUBMISSION_WEBHOOK_AUTH_TOKEN = "Your Production Submission Webhook Auth Token";  // TODO: Replace with your Bearer token
 
 /**
  * Main trigger handler for form submissions

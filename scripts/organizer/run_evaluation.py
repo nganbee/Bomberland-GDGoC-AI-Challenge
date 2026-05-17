@@ -242,6 +242,20 @@ def run_submission_batch(
     except Exception as e:
         logger.warning("Could not create evaluation lock for %s: %s", submission_id, e)
 
+    def _cleanup_lock():
+        """Remove the submission batch lock file. Call before every return path."""
+        try:
+            _lock = EVALUATION_LOCK_DIR / submission_id
+            if _lock.exists():
+                _lock.unlink()
+            if EVALUATION_LOCK_DIR.exists() and not any(EVALUATION_LOCK_DIR.iterdir()):
+                try:
+                    EVALUATION_LOCK_DIR.rmdir()
+                except Exception:
+                    pass
+        except Exception as _e:
+            logger.warning("Could not remove evaluation lock for %s: %s", submission_id, _e)
+
     total_started = time.perf_counter()
     parallel_workers = max(1, int(parallel_workers))
     timing_stages: dict[str, float] = {}
@@ -285,6 +299,7 @@ def run_submission_batch(
         target_reason = runtime_failed.get(submission_id)
         if target_reason:
             sheet_update = _refresh_sheet_if_requested()
+            _cleanup_lock()
             return {
                 "status": "error",
                 "message": f"Target submission {submission_id} failed runtime precheck: {target_reason}",
@@ -292,6 +307,7 @@ def run_submission_batch(
                 "sheet_update": sheet_update,
             }
         sheet_update = _refresh_sheet_if_requested()
+        _cleanup_lock()
         return {
             "status": "error",
             "message": f"Target submission {submission_id} not found in active valid pool.",
@@ -302,6 +318,7 @@ def run_submission_batch(
     opponents = [item for item in candidates if item["submission_id"] != submission_id]
     if len(opponents) < 3:
         sheet_update = _refresh_sheet_if_requested()
+        _cleanup_lock()
         return {
             "status": "error",
             "message": f"Not enough opponents in active pool. Need >=3, got {len(opponents)}.",
@@ -477,29 +494,7 @@ def run_submission_batch(
     }
     _log_timing(enable_timing_logs, f"total run_submission_batch: {result['timings']['total_s']:.3f}s")
 
-    if update_sheet:
-        result["sheet_update"] = update_google_sheets(
-            db_path=db_path,
-            credentials_file=sheet_credentials_file,
-            spreadsheet_id=sheet_spreadsheet_id,
-            sheet_range=sheet_range,
-            include_baseline=True,
-        )
-
-    try:
-        lock_file = EVALUATION_LOCK_DIR / submission_id
-        if lock_file.exists():
-            lock_file.unlink()
-        
-        # Try to remove the directory if it's now empty (non-blocking)
-        if EVALUATION_LOCK_DIR.exists() and not any(EVALUATION_LOCK_DIR.iterdir()):
-            try:
-                EVALUATION_LOCK_DIR.rmdir()
-            except Exception:
-                pass
-    except Exception as e:
-        logger.warning("Could not remove evaluation lock for %s: %s", submission_id, e)
-
+    _cleanup_lock()
     return result
 
 

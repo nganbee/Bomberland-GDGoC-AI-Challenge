@@ -1,11 +1,10 @@
-const REGISTRATION_WEBHOOK_URL = "http://34.158.46.70:5000/register"; // "https://arguable-harpist-false.ngrok-free.dev/register"; // replaced with production url
-const REGISTRATION_WEBHOOK_BEARER_TOKEN = "4c376ba89b8b8ade3626cb84252f2e35e1c02b2b31c70b630c03345ce4917f57";
+const REGISTRATION_WEBHOOK_URL = "Your Production Registration Webhook URL";
+const REGISTRATION_WEBHOOK_BEARER_TOKEN = "Your Registration Bearer Token";
 
 // Organizer-managed content placeholders.
-const SUBMISSION_FORM_LINK = "https://forms.gle/TNZb3grb1fJqq14m9";
-const DISCORD_COMMUNITY_LINK = "https://discord.gg/GqQJzuunBY";
+const SUBMISSION_FORM_LINK = "Your Submission Form Link";
+const DISCORD_COMMUNITY_LINK = "Your Discord Community Link";
 const CONTACT_HELP_CHANNEL = "devclub.hcmus@gmail.com";
-// const CUSTOM_EMAIL_CONTENT = "<SET_CUSTOM_EMAIL_CONTENT>";
 
 function onFormSubmit(e) {
   // Works reliably for Form submit triggers
