@@ -304,12 +304,12 @@ There are **6 rule-based baseline agents** with fixed ratings (do not change dur
 
 | Name | Strategy | Score (μ − 3σ) |
 |---|---|---|
-| `tactical_rule_agent` | Dodges danger, finds items, targets enemies, calculates bomb placement | ~115.3 |
-| `genius_rule_agent` | Balanced offense/defense, BFS pathfinding | ~114.1 |
-| `smarter_rule_agent` | Prioritizes boxes, dodges bombs, chases enemies | ~111.1 |
-| `box_farmer_agent` | Focuses on breaking boxes for items | ~108.6 |
-| `simple_rule_agent` | Simple rules: dodge bombs, place bombs | ~108.0 |
-| `random_agent` | Random actions | ~100.3 |
+| `tactical_rule_agent` | Dodges danger, finds items, targets enemies, calculates bomb placement | ~104.0 |
+| `genius_rule_agent` | Balanced offense/defense, BFS pathfinding | ~102.3 |
+| `smarter_rule_agent` | Prioritizes boxes, dodges bombs, chases enemies | ~100.6 |
+| `box_farmer_agent` | Focuses on breaking boxes for items | ~97.8 |
+| `simple_rule_agent` | Simple rules: dodge bombs, place bombs | ~97.3 |
+| `random_agent` | Random actions | ~89.1 |
 
 Additionally, an **RL-based agent** (`dqn_agent`) is provided as a reference.
 
@@ -342,9 +342,9 @@ Additionally, an **RL-based agent** (`dqn_agent`) is provided as a reference.
 
 | Date | Event |
 |---|---|
-| 18/5 | Registration & Submissions open |
-| 20/5 | Workshop about the competition & RL |
-| 21/6 | **Submissions close, Leaderboard frozen** |
+| 20/5 | Registration & Submissions open |
+| 24/5 | Workshop about the competition & RL |
+| 21/6 | **Submissions close** |
 | 21-22/6 | Top 8 selected → Grand Finals → Results Announcement |
 | 24/6 | Pitching & Award ceremony |
 
