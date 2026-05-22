@@ -88,14 +88,17 @@ class BomberEnv:
                     p = occupants[0]
                     if cell == Map.ITEM_RADIUS:
                         p.bomb_radius_bonus = min(p.bomb_radius_bonus + 1, Player.MAX_BOMB_RADIUS - 1)
+                        p.stats['items'] += 1
                     elif cell == Map.ITEM_CAPACITY:
                         p.bombs_left = min(p.bombs_left + 1, Player.MAX_BOMB_CAPACITY)
+                        p.stats['items'] += 1
                 # Remove the item whether collected (1 occupant) or destroyed (>1 occupant)
                 self.map.grid[x, y] = Map.GRASS
 
         for (bx, by), (owner_id, radius) in pending_bombs.items():
             self.bombs.append(Bomb(bx, by, owner_id, radius=radius)) # then place bombs
             self.players[owner_id].bombs_left -= 1
+            self.players[owner_id].stats['bombs'] += 1
             
         exploded_this_step = []
         # tick all bombs
@@ -118,12 +121,15 @@ class BomberEnv:
                     exploded_this_step.append(other_bomb)
         
         if exploded_this_step:
-            all_affected_tiles = set()
+            affected_tiles_map = {}
             for bomb in exploded_this_step:
-                all_affected_tiles.update(self._get_explosion_tiles(bomb))
+                for tx, ty in self._get_explosion_tiles(bomb):
+                    if (tx, ty) not in affected_tiles_map:
+                        affected_tiles_map[(tx, ty)] = set()
+                    affected_tiles_map[(tx, ty)].add(bomb.owner_id)
                 self.players[bomb.owner_id].bombs_left += 1
             
-            self._apply_explosions(all_affected_tiles)
+            self._apply_explosions(affected_tiles_map)
             self.bombs = [b for b in self.bombs if not b.exploded]
         self._spawn_random_items()
         
@@ -152,13 +158,18 @@ class BomberEnv:
         
         return tiles
 
-    def _apply_explosions(self, affected_tiles):
-        for tx, ty in affected_tiles:
+    def _apply_explosions(self, affected_tiles_map):
+        for (tx, ty), owner_ids in affected_tiles_map.items():
             for p in self.players:
-                if p.x == tx and p.y == ty:
+                if p.x == tx and p.y == ty and p.alive:
                     p.alive = False
+                    for oid in owner_ids:
+                        if oid != p.id:
+                            self.players[oid].stats['kills'] += 1
             if self.map.grid[tx, ty] == Map.BOX:
                 self.map.grid[tx, ty] = Map.GRASS
+                for oid in owner_ids:
+                    self.players[oid].stats['boxes'] += 1
                 rand = self.rng.random()
                 if rand < 0.3:
                     self.map.grid[tx, ty] = Map.ITEM_RADIUS

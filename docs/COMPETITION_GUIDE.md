@@ -258,6 +258,15 @@ Each match has 4 agents. Ranking in the match is determined by **elimination ord
 - First agent eliminated = Worst rank
 - Agents eliminated in the same step → Draw (shared rank)
 
+**Step 500 Tie-breaker:**
+If multiple agents survive to step 500, they are no longer guaranteed a draw. Surviving agents are ranked based on their active engagement during the match, in the following hierarchy:
+1. Most Kills
+2. Most Boxes Destroyed
+3. Most Items Collected
+4. Most Bombs Placed
+
+If agents have exactly identical statistics across all 4 metrics, they will share a draw.
+
 **Win/Draw/Loss:**
 Determined by match ranking:
 - **Win:** Achieving the unique best rank in the match (e.g., last one alive, or sole survivor at time limit).

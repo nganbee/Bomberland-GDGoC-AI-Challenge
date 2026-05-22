@@ -16,9 +16,9 @@ class Player:
         self.x = row
         self.y = col
         self.alive = True
-        # self.bomb_capacity = 1
         self.bombs_left = 1
         self.bomb_radius_bonus = 0
+        self.stats = {'kills': 0, 'boxes': 0, 'items': 0, 'bombs': 0}
     
     def move(self, dx, dy, grid, players, bombs):
         if not self.alive:

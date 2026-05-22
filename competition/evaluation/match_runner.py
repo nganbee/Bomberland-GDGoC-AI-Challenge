@@ -163,7 +163,30 @@ class MatchRunner:
                 alive_mask[i] = False
                 survival_steps[i] = env.current_step
         if alives:
-            death_order.append(alives)
+            def get_stats(i):
+                return (
+                    env.players[i].stats['kills'],
+                    env.players[i].stats['boxes'],
+                    env.players[i].stats['items'],
+                    env.players[i].stats['bombs']
+                )
+            alives.sort(key=get_stats, reverse=True)
+            
+            groups = []
+            current_group = [alives[0]]
+            current_stats = get_stats(alives[0])
+            for i in alives[1:]:
+                stats = get_stats(i)
+                if stats == current_stats:
+                    current_group.append(i)
+                else:
+                    groups.append(current_group)
+                    current_group = [i]
+                    current_stats = stats
+            groups.append(current_group)
+            
+            # groups has best first. death_order expects worst first, so extend reversed.
+            death_order.extend(reversed(groups))
         
         # Determine final ranks, backward
         for rank, group in enumerate(reversed(death_order)):
