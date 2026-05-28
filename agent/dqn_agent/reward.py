@@ -30,12 +30,12 @@ REWARD_DICT = {
     "agent_death": -2.0,
     "standing_still": -0.01,
     "time_penalty": -0.005,
-    "plant_near_box": 0.05,
-    "item_collection": 0.1,
+    "plant_near_box": 0.15,
+    "item_collection": 0.15,
     "danger_evasion": 0.12,
-    "danger_enter": -0.06,
+    "danger_enter": -0.03,
     "own_blast_loiter": -0.04,
-    "approach_enemy": 0.02,
+    "approach_enemy": 0.05,
 }
 
 
